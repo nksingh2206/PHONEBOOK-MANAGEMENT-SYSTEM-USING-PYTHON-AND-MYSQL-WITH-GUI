@@ -1,0 +1,357 @@
+from tkinter import *
+from tkinter import messagebox
+from PIL import Image, ImageTk
+import mysql.connector
+
+# Connect to MySQL
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="Sneha@123",
+    database="phonebook"
+)
+
+cursor = db.cursor()
+
+# Create user table if not exists
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) UNIQUE,
+        password VARCHAR(255)
+    )
+""")
+db.commit()
+
+# Create phonebook table if not exists
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS contacts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255),
+        phone_number VARCHAR(15),
+        user_id INT,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+""")
+db.commit()
+
+# Create contact description table if not exists
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS contact_description (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255),
+    address VARCHAR(255),
+    contact_id INT,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+)
+""")
+db.commit()
+
+def open_phonebook_gui(user_id):
+    def add_contact():
+        """Add a new contact."""
+        name = name_entry.get()
+        phone_number = phone_entry.get()
+
+        if not name or not phone_number:
+            messagebox.showerror("Error", "Name and Phone Number are required!")
+            return
+
+        query = "INSERT INTO contacts (name, phone_number, user_id) VALUES (%s, %s, %s)"
+        values = (name, phone_number, user_id)
+        cursor.execute(query, values)
+        db.commit()
+        messagebox.showinfo("Success", "Contact added successfully!")
+        name_entry.delete(0, END)
+        phone_entry.delete(0, END)
+        update_contact_listbox()
+
+    def open_description_window():
+        def add_contact_description():
+            """Add description for a contact."""
+            email = email_entry.get()
+            address = address_entry.get()
+            
+
+            if not email or not address:
+                messagebox.showerror("Error", "Email and Address are required!")
+                return
+
+            selected_contact_index = contact_listbox.curselection()
+            if not selected_contact_index:
+                messagebox.showerror("Error", "Please select a contact!")
+                return
+
+            selected_contact_id = contacts[selected_contact_index[0]][0]
+
+            query = "INSERT INTO contact_description (email, address, contact_id) VALUES (%s, %s, %s)"
+            values = (email, address, selected_contact_id)
+            cursor.execute(query, values)
+            db.commit()
+            messagebox.showinfo("Success", "Contact description added successfully!")
+            email_entry.delete(0, END)
+            address_entry.delete(0, END)
+            description_window.destroy()
+
+        description_window = Tk()
+        description_window.title("Add Contact Description")
+
+        Label(description_window, text="Email:", font=("Arial", 16)).grid(row=0, column=0, padx=10, pady=5)
+        email_entry = Entry(description_window, width=30)
+        email_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        Label(description_window, text="Address:", font=("Arial", 16)).grid(row=1, column=0, padx=10, pady=5)
+        address_entry = Entry(description_window, width=30)
+        address_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        Button(description_window, text="Add Description", command=add_contact_description, font=("Arial", 14)).grid(row=2, column=0, columnspan=2, pady=10)
+
+        description_window.mainloop()
+
+    def search_contact():
+        """Search for a contact."""
+        search_term = search_entry.get()
+
+        if not search_term:
+            messagebox.showerror("Error", "Please enter a search term!")
+            return
+
+        query = "SELECT id, name, phone_number FROM contacts WHERE name LIKE %s AND user_id = %s"
+        cursor.execute(query, (f'%{search_term}%', user_id))
+        search_results = cursor.fetchall()
+
+        if search_results:
+            search_result_window = Tk()
+            search_result_window.title("Search Results")
+
+            Label(search_result_window, text="Search Results", font=("Arial", 16)).pack(pady=10)
+
+            for result in search_results:
+                id, name, phone_number = result
+                Label(search_result_window, text=f"ID: {id}, Name: {name}, Phone: {phone_number}", font=("Arial", 12)).pack()
+
+            search_result_window.mainloop()
+        else:
+            messagebox.showinfo("Search Results", "No contacts found matching the search term.")
+
+    def delete_contact():
+        """Delete a contact."""
+        contact_id = delete_entry.get()
+
+        if not contact_id:
+            messagebox.showerror("Error", "Please enter a contact ID to delete!")
+            return
+
+        query = "DELETE FROM contacts WHERE id = %s AND user_id = %s"
+        cursor.execute(query, (contact_id, user_id))
+        db.commit()
+        messagebox.showinfo("Success", "Contact deleted successfully!")
+        delete_entry.delete(0, END)
+        update_contact_listbox()
+
+    def modify_contact():
+        """Modify a contact."""
+        contact_id = modify_id_entry.get()
+        new_name = modify_name_entry.get()
+        new_phone_number = modify_phone_entry.get()
+
+        if not contact_id or not new_name or not new_phone_number:
+            messagebox.showerror("Error", "Please enter contact ID, new name, and new phone number!")
+            return
+
+        query = "UPDATE contacts SET name = %s, phone_number = %s WHERE id = %s AND user_id = %s"
+        cursor.execute(query, (new_name, new_phone_number, contact_id, user_id))
+        db.commit()
+        messagebox.showinfo("Success", "Contact modified successfully!")
+        modify_id_entry.delete(0, END)
+        modify_name_entry.delete(0, END)
+        modify_phone_entry.delete(0, END)
+        update_contact_listbox()
+
+    def update_contact_listbox():
+        contact_listbox.delete(0, END)
+        query = "SELECT id, name FROM contacts WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        global contacts
+        contacts = cursor.fetchall()
+        for contact in contacts:
+            contact_listbox.insert(END, f"{contact[1]} (ID: {contact[0]})")
+
+    # GUI Setup
+    root = Tk()
+    root.title("Phonebook Management System")
+    
+    # Load the image for the background
+    background_image = Image.open("pic33.jpg")  # Replace "functionality_image.jpg" with your image file path
+    resized_bg_image = background_image.resize((root.winfo_screenwidth(), root.winfo_screenheight()))
+    global photo_background
+    photo_background = ImageTk.PhotoImage(resized_bg_image)
+
+    # Display the background image
+    background_label = Label(root, image=photo_background)
+    background_label.place(x=0, y=0, relwidth=1, relheight=1)
+
+    # GUI Setup in the middle
+    frame = Frame(root, bg="white", bd=5)
+    frame.place(relx=0.5, rely=0.5, anchor=CENTER)
+
+    # Label and Entry for Name
+    Label(frame, text="Name:", font=("Arial", 14)).grid(row=0, column=0, padx=10, pady=5)
+    name_entry = Entry(frame, width=30)
+    name_entry.grid(row=0, column=1, padx=10, pady=5)
+
+    # Label and Entry for Phone Number
+    Label(frame, text="Phone Number:", font=("Arial", 14)).grid(row=1, column=0, padx=10, pady=5)
+    phone_entry = Entry(frame, width=30)
+    phone_entry.grid(row=1, column=1, padx=10, pady=5)
+
+    # Button to Add Contact
+    Button(frame, text="Add Contact", command=add_contact, font=("Arial", 14)).grid(row=2, column=0, columnspan=2, pady=10)
+
+    # Button to Add Description
+    Button(frame, text="Add Description", command=open_description_window, font=("Arial", 14)).grid(row=3, column=0, columnspan=2, pady=10)
+
+    # Label and Entry for Search
+    Label(frame, text="Search:", font=("Arial", 14)).grid(row=4, column=0, padx=10, pady=5)
+    search_entry = Entry(frame, width=30)
+    search_entry.grid(row=4, column=1, padx=10, pady=5)
+    Button(frame, text="Search", command=search_contact, font=("Arial", 14)).grid(row=5, column=0, columnspan=2, pady=5)
+
+    # Label and Entry for Delete
+    Label(frame, text="Delete by ID:", font=("Arial", 14)).grid(row=6, column=0, padx=10, pady=5)
+    delete_entry = Entry(frame, width=30)
+    delete_entry.grid(row=6, column=1, padx=10, pady=5)
+    Button(frame, text="Delete Contact", command=delete_contact, font=("Arial", 14)).grid(row=7, column=0, columnspan=2, pady=5)
+
+    # Label and Entry for Modify
+    Label(frame, text="Modify Contact:", font=("Arial", 14)).grid(row=8, column=0, padx=10, pady=5)
+    Label(frame, text="ID:", font=("Arial", 14)).grid(row=9, column=0, padx=10, pady=5)
+    modify_id_entry = Entry(frame, width=10)
+    modify_id_entry.grid(row=9, column=1, padx=5, pady=5)
+    Label(frame, text="New Name:", font=("Arial", 14)).grid(row=10, column=0, padx=10, pady=5)
+    modify_name_entry = Entry(frame, width=30)
+    modify_name_entry.grid(row=10, column=1, padx=10, pady=5)
+    Label(frame, text="New Phone Number:", font=("Arial", 14)).grid(row=11, column=0, padx=10, pady=5)
+    modify_phone_entry = Entry(frame, width=30)
+    modify_phone_entry.grid(row=11, column=1, padx=10, pady=5)
+    Button(frame, text="Modify Contact", command=modify_contact, font=("Arial", 14)).grid(row=12, column=0, columnspan=2, pady=5)
+
+    # Contact listbox
+    contact_listbox = Listbox(frame, width=30, height=2, font=("Arial", 12))
+    contact_listbox.grid(row=13, column=0, columnspan=2, padx=10, pady=5)
+
+    Button(frame, text="Exit", command=root.destroy, font=("Arial", 14)).grid(row=14, column=0, columnspan=2, pady=10)
+
+    root.mainloop()
+
+    
+
+def open_signup_window():
+    welcome_window.destroy()
+    
+    def signup():
+        """Create a new user account."""
+        new_username = new_username_entry.get()
+        new_password = new_password_entry.get()
+
+        if not new_username or not new_password:
+            messagebox.showerror("Error", "Username and Password are required!")
+            return
+
+        try:
+            query = "INSERT INTO users (username, password) VALUES (%s, %s)"
+            values = (new_username, new_password)
+            cursor.execute(query, values)
+            db.commit()
+            messagebox.showinfo("Success", "Account created successfully!")
+            signup_window.destroy()
+            open_login_window()
+        except mysql.connector.IntegrityError:
+            messagebox.showerror("Error", "Username already exists. Please choose a different username.")
+    
+    signup_window = Tk()
+    signup_window.title("Signup")
+    signup_window.configure(background='pink')
+
+    Label(signup_window, text="New Username:", font=("Arial", 16)).grid(row=0, column=0, padx=10, pady=5)
+    Label(signup_window, text="New Password:", font=("Arial", 16)).grid(row=1, column=0, padx=10, pady=5)
+
+    new_username_entry = Entry(signup_window, width=30)
+    new_username_entry.grid(row=0, column=1, padx=10, pady=5)
+    new_password_entry = Entry(signup_window, width=30, show="*")
+    new_password_entry.grid(row=1, column=1, padx=10, pady=5)
+
+    signup_button = Button(signup_window, text="Signup", command=signup, font=("Arial", 14))
+    signup_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+    signup_window.mainloop()
+
+
+def open_login_window():
+    welcome_window.destroy()
+
+    def authenticate():
+        """Authenticate the user."""
+        entered_username = username_entry.get()
+        entered_password = password_entry.get()
+
+        query = "SELECT * FROM users WHERE username = %s AND password = %s"
+        cursor.execute(query, (entered_username, entered_password))
+        result = cursor.fetchone()
+
+        if result:
+            login_window.destroy()
+            open_phonebook_gui(result[0])  # Pass user ID to the main GUI
+        else:
+            messagebox.showerror("Login Failed", "Invalid username or password")
+
+    # GUI Setup
+    login_window = Tk()
+    login_window.title("Login")
+
+    # Load the background image
+    background_image = Image.open("pic6.jpg")  # Replace "background_image.jpg" with your image file path
+    resized_bg_image = background_image.resize((login_window.winfo_screenwidth(), login_window.winfo_screenheight()))
+    photo_background = ImageTk.PhotoImage(resized_bg_image)
+
+    # Display the background image
+    background_label = Label(login_window, image=photo_background)
+    background_label.place(x=0, y=0, relwidth=1, relheight=1)
+
+    # Labels and entries for username and password
+    Label(login_window, text="Username:", font=("Arial", 24), bg="white").grid(row=0, column=0, padx=10, pady=5)
+    username_entry = Entry(login_window, width=30, font=("Arial", 20))
+    username_entry.grid(row=0, column=1, padx=10, pady=5)
+    
+    Label(login_window, text="Password:", font=("Arial", 24), bg="white").grid(row=1, column=0, padx=10, pady=5)
+    password_entry = Entry(login_window, width=30, show="*", font=("Arial", 20))
+    password_entry.grid(row=1, column=1, padx=10, pady=5)
+
+    # Login button
+    login_button = Button(login_window, text="Login", command=authenticate, font=("Arial", 24))
+    login_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+    login_window.mainloop()
+
+
+
+# Welcome Page
+welcome_window = Tk()
+welcome_window.title("WELCOME ")
+welcome_window.geometry("400x600")
+welcome_window.configure(background='yellow')
+# Load the image
+image = Image.open("phonepic.jpg")  # Replace "welcome_image.jpg" with your image file path
+photo = ImageTk.PhotoImage(image)
+
+# Display the image
+image_label = Label(welcome_window, image=photo)
+image_label.image = photo  # Keep a reference to avoid garbage collection
+image_label.pack()
+
+Label(welcome_window, text="WELCOME TO PHONEBOOK MANAGEMENT SYSTEM", font=("Arial", 26)).pack(pady=20)
+
+Button(welcome_window, text="Signup", command=open_signup_window, font=("Arial", 24)).pack(pady=10)
+Button(welcome_window, text="Login", command=open_login_window, font=("Arial", 26)).pack(pady=10)
+
+welcome_window.mainloop()
